@@ -1,11 +1,11 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	utils "go-ip-info/pkgs"
-	"log"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Response struct {
@@ -20,41 +20,47 @@ type Response struct {
 	ISP       string  `json:"isp"`
 }
 
-func ipInfoHandler(w http.ResponseWriter, r *http.Request) {
-	r.Header.Set("X-Forwarded-For", "182.130.13.11")
-	ip := utils.GetClientIP(r)
-	if ip == "" {
-		http.Error(w, "Unable to get IP address", http.StatusBadRequest)
-		return
-	}
-
-	geoInfo, err := utils.GetGeoInfo(ip)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-	if geoInfo.Status != "success" {
-		http.Error(w, "Unable to get IP information", http.StatusBadRequest)
-	}
-
-	response := Response{
-		IP:        geoInfo.Query,
-		Country:   geoInfo.Country,
-		Region:    geoInfo.RegionName,
-		City:      geoInfo.City,
-		Zip:       geoInfo.Zip,
-		Latitude:  geoInfo.Lat,
-		Longitude: geoInfo.Lon,
-		TimeZone:  geoInfo.TimeZone,
-		ISP:       geoInfo.ISP,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
 func main() {
-	http.HandleFunc("/ip-info", ipInfoHandler)
+	router := gin.Default()
 
+	router.GET("/ip-info", func(c *gin.Context) {
+		// set ip
+		c.Request.Header.Set("X-Forwarded-For", "182.130.13.20")
+		var ip string
+		ip = c.ClientIP()
+		if ip != "" {
+			fmt.Println("Client IP:", ip)
+		} else {
+			ip = utils.GetClientIP(c.Request)
+			if ip == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Unable to get IP address"})
+				return
+			}
+		}
+
+		geoInfo, err := utils.GetGeoInfo(ip)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if geoInfo.Status != "success" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Unable to get IP information"})
+			return
+		}
+
+		response := Response{
+			IP:        geoInfo.Query,
+			Country:   geoInfo.Country,
+			Region:    geoInfo.RegionName,
+			City:      geoInfo.City,
+			Zip:       geoInfo.Zip,
+			Latitude:  geoInfo.Lat,
+			Longitude: geoInfo.Lon,
+			TimeZone:  geoInfo.TimeZone,
+			ISP:       geoInfo.ISP,
+		}
+		c.JSON(http.StatusOK, response)
+	})
 	fmt.Println("Server is running on port 8080...")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	router.Run(":8080")
 }
